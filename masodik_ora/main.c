@@ -12,6 +12,11 @@ int main(int argc, char* argv[])
 	float c[3][3];
     float d[3][3];
 
+    float scalar = 2.0f;
+
+    
+
+
     init_zero_matrix(b);
     b[1][1] =  8.0f;
     b[2][0] = -3.0f;
@@ -29,6 +34,14 @@ int main(int argc, char* argv[])
     add_matrices(a, b, c);
 
     print_matrix(c);
+    printf("-----------------\n");
+
+
+    printf("Eredeti matrix:\n");
+    print_matrix(a);
+    scalarMultiplyMatrix(a, scalar);
+    printf("\nMatrix %.1f-es szorzas utan:\n", scalar);
+    print_matrix(a);
 
 	return 0;
 }

@@ -12,6 +12,13 @@ void init_zero_matrix(float matrix[3][3]);
  */
  void initIdentityMatrix(float matrix[3][3]);
 
+ /**
+ * Scalar Mult.
+ */
+
+ void scalarMultiplyMatrix(float matrix[3][3], float scalar);
+
+
 
 /**
  * Print the elements of the matrix.

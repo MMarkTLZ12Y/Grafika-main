@@ -22,6 +22,14 @@ void initIdentityMatrix(float matrix[3][3]) {
     }
 }
 
+void scalarMultiplyMatrix(float matrix[3][3], float scalar) {
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 3; j++) {
+            matrix[i][j] *= scalar;
+        }
+    }
+}
+
 
 void print_matrix(const float matrix[3][3])
 {
