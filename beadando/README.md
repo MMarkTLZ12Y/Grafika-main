@@ -34,6 +34,7 @@ A játék során fák, állatok, a feleség és szurok gyűjtése a cél, valami
   - Az állatok, fák és a feleség beöltött `.obj` modellek.
   - A ház és a tűzrakóhely textúrázott elemek.
   - A tűz animációval ég a szurok égetésekor.
+  - A fény: +/- segítségével állítható.
 
 - **Segítség:**
   - `F1`: Súgó – megjeleníti, melyik gomb mit csinál.
@@ -78,6 +79,7 @@ A játékos feladata, hogy minél gyorsabban és hatékonyabban gyűjtse össze 
 - AI-val ellátott állatok, egyedi viselkedésekkel.
 - Erőforrás-menedzsment az élelem és energia kezelésére.
 - Többjátékos mód, versengő gyűjtögetés.
+- Állatoknak animáció készítés
 
 ---
 
