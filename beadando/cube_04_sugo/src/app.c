@@ -108,7 +108,7 @@ void handle_app_events(App* app)
                     case SDL_SCANCODE_W:
                         set_camera_speed(&(app->camera), 1);
                         break;
-                    case SDL_SCANCODE_H:  // 'H' billentyűre bekapcsol a súgó
+                    case SDL_SCANCODE_F1:  // 'F1' billentyűre bekapcsol a súgó
                         app->show_help = !app->show_help;
                         break;
                     case SDL_SCANCODE_S:
