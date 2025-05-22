@@ -1,0 +1,262 @@
+==== app.h ====
+#ifndef APP_H
+#define APP_H
+
+#include "camera.h"
+#include "scene.h"
+
+#include <SDL2/SDL.h>
+
+#include <stdbool.h>
+
+#define VIEWPORT_RATIO (4.0 / 3.0)
+#define VIEWPORT_ASPECT 50.0
+
+typedef struct App {
+    SDL_Window* window;
+    SDL_GLContext gl_context;
+    bool is_running;
+    double uptime;
+    Camera camera;
+    Scene scene;
+    bool show_help;  // Új flag a súgó megjelenítéséhez
+    GLuint help_texture_id;  // Új tag a súgó textúrához
+} App;
+
+
+/**
+ * Initialize the application.
+ */
+void init_app(App* app, int width, int height);
+
+/**
+ * Initialize the OpenGL context.
+ */
+void init_opengl();
+
+/**
+ * Reshape the window.
+ */
+void reshape(GLsizei width, GLsizei height);
+
+/**
+ * Handle the events of the application.
+ */
+void handle_app_events(App* app);
+
+/**
+ * Update the application.
+ */
+void update_app(App* app);
+
+/**
+ * Render the application.
+ */
+void render_app(App* app);
+
+/**
+ * Destroy the application.
+ */
+void destroy_app(App* app);
+
+#endif /* APP_H */
+
+==== camera.h ====
+#ifndef CAMERA_H
+#define CAMERA_H
+
+#include "utils.h"
+
+#include <stdbool.h>
+
+/**
+ * Camera, as a moving point with direction
+ */
+typedef struct Camera
+{
+    vec3 position;
+    vec3 rotation;
+    vec3 speed;
+    bool is_preview_visible;
+    bool is_jumping;     // True, ha a kamera éppen ugrik
+    float vertical_speed; // Függőleges sebesség
+} Camera;
+
+/**
+ * Initialize the camera to the start position.
+ */
+void init_camera(Camera* camera);
+
+/**
+ * Update the position of the camera.
+ */
+void update_camera(Camera* camera, double time);
+
+/**
+ * Apply the camera settings to the view transformation.
+ */
+void set_view(const Camera* camera);
+
+/**
+ * Set the horizontal and vertical rotation of the view angle.
+ */
+void rotate_camera(Camera* camera, double horizontal, double vertical);
+
+/**
+ * Set the speed of forward and backward motion.
+ */
+void set_camera_speed(Camera* camera, double speed);
+
+/**
+ * Set the speed of left and right side steps.
+ */
+void set_camera_side_speed(Camera* camera, double speed);
+
+#endif /* CAMERA_H */
+
+==== scene.h ====
+// scene.h
+
+#ifndef SCENE_H
+#define SCENE_H
+
+#include "camera.h"
+#include "texture.h"
+#include "utils.h"
+
+#include <obj/model.h>
+#include <stdbool.h>
+
+#define NUM_TREES 10
+
+// Constants for the flower
+#define FLOWER_BASE_HEIGHT 1.5f
+#define FLOWER_BOB_AMPLITUDE 0.2f
+#define FLOWER_BOB_FREQUENCY 2.0f
+#define FLOWER_SPIN_SPEED 45.0f
+#define FLOWER_SIZE 1.0f
+
+// Constants for the wood sprites around trees
+#define NUM_WOOD_SPRITES_PER_TREE 5
+#define WOOD_SPRITE_SIZE 0.3f
+#define WOOD_SPRITE_ORBIT_RADIUS 0.5f
+#define WOOD_SPRITE_VERTICAL_OFFSET 0.4f
+#define WOOD_SPRITE_SPIN_SPEED 60.0f
+
+// ÚJ: Falak száma megnövelve az ajtónyílás miatt
+#define NUM_WALL_SEGMENTS 5 // Eredetileg 4 volt
+
+typedef struct Wall {
+    vec3 position; // Center of the wall segment
+    vec3 size;     // Full dimensions (width, depth, height) of the segment
+} Wall;
+
+typedef struct Scene
+{
+    Model cube;
+    Model tree;
+    Model lady_figure;
+    Material material;
+    GLuint texture_id;
+    GLuint ground_texture_id;
+    Wall walls[NUM_WALL_SEGMENTS]; // Megnövelt méret
+    vec3 tree_positions[NUM_TREES];
+    
+    vec3 lady_figure_position;
+    vec3 lady_figure_start_pos;
+    vec3 lady_figure_end_pos;
+    float lady_figure_speed;
+    bool lady_figure_moving_to_end;
+
+    GLuint flower_texture_id;
+    vec3 flower_position;
+    float flower_spin_angle;
+    double flower_bob_timer;
+
+    GLuint wood_texture_id;
+    float wood_sprite_common_spin_angle;
+
+} Scene;
+
+void init_scene(Scene* scene);
+void set_lighting();
+void set_material(const Material* material);
+void update_scene(Scene* scene, double elapsed_time);
+void render_scene(const Scene* scene, const Camera* camera);
+void draw_origin();
+void draw_ground(GLuint texture_id);
+void draw_wall(const Wall* wall); // This function remains the same
+void render_billboard_sprite(GLuint texture_id, const vec3* world_pos, float size, float spin_angle, const Camera* camera);
+bool check_collision(const Camera* camera, const Wall* walls, int num_walls); // Added num_walls parameter
+
+#endif /* SCENE_H */
+
+==== texture.h ====
+#ifndef TEXTURE_H
+#define TEXTURE_H
+
+#include <GL/gl.h>
+
+typedef GLubyte Pixel[3];
+
+/**
+ * Load texture from file and returns with the texture name.
+ */
+GLuint load_texture(char* filename);
+
+#endif /* TEXTURE_H */
+
+
+==== utils.h ====
+#ifndef UTILS_H
+#define UTILS_H
+
+#include <math.h> // For M_PI, sqrtf
+
+/**
+ * GLSL-like three dimensional vector
+ */
+typedef struct vec3
+{
+    float x;
+    float y;
+    float z;
+} vec3;
+
+/**
+ * Color with RGB components
+ */
+typedef struct Color
+{
+    float red;
+    float green;
+    float blue;
+} Color;
+
+/**
+ * Material
+ */
+typedef struct Material
+{
+    struct Color ambient;
+    struct Color diffuse;
+    struct Color specular;
+    float shininess;
+} Material;
+
+/**
+ * Calculates radian from degree.
+ */
+double degree_to_radian(double degree);
+
+// Vector utility functions
+vec3 vec3_add(vec3 a, vec3 b);
+vec3 vec3_subtract(vec3 a, vec3 b);
+vec3 vec3_scale(vec3 v, float s);
+float vec3_dot(vec3 a, vec3 b);
+float vec3_length(vec3 v);
+vec3 vec3_normalize(vec3 v);
+float vec3_distance(vec3 a, vec3 b);
+
+#endif /* UTILS_H */
+
