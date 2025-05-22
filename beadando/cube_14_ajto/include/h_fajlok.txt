@@ -1,0 +1,264 @@
+==== app.h ====
+#ifndef APP_H
+#define APP_H
+
+#include "camera.h"
+#include "scene.h"
+
+#include <SDL2/SDL.h>
+
+#include <stdbool.h>
+
+#define VIEWPORT_RATIO (4.0 / 3.0)
+#define VIEWPORT_ASPECT 50.0
+
+typedef struct App {
+    SDL_Window* window;
+    SDL_GLContext gl_context;
+    bool is_running;
+    double uptime;
+    Camera camera;
+    Scene scene;
+    bool show_help;  // Új flag a súgó megjelenítéséhez
+    GLuint help_texture_id;  // Új tag a súgó textúrához
+} App;
+
+
+/**
+ * Initialize the application.
+ */
+void init_app(App* app, int width, int height);
+
+/**
+ * Initialize the OpenGL context.
+ */
+void init_opengl();
+
+/**
+ * Reshape the window.
+ */
+void reshape(GLsizei width, GLsizei height);
+
+/**
+ * Handle the events of the application.
+ */
+void handle_app_events(App* app);
+
+/**
+ * Update the application.
+ */
+void update_app(App* app);
+
+/**
+ * Render the application.
+ */
+void render_app(App* app);
+
+/**
+ * Destroy the application.
+ */
+void destroy_app(App* app);
+
+#endif /* APP_H */
+
+==== camera.h ====
+#ifndef CAMERA_H
+#define CAMERA_H
+
+#include "utils.h"
+
+#include <stdbool.h>
+
+/**
+ * Camera, as a moving point with direction
+ */
+typedef struct Camera
+{
+    vec3 position;
+    vec3 rotation;
+    vec3 speed;
+    bool is_preview_visible;
+    bool is_jumping;     // True, ha a kamera éppen ugrik
+    float vertical_speed; // Függőleges sebesség
+} Camera;
+
+/**
+ * Initialize the camera to the start position.
+ */
+void init_camera(Camera* camera);
+
+/**
+ * Update the position of the camera.
+ */
+void update_camera(Camera* camera, double time);
+
+/**
+ * Apply the camera settings to the view transformation.
+ */
+void set_view(const Camera* camera);
+
+/**
+ * Set the horizontal and vertical rotation of the view angle.
+ */
+void rotate_camera(Camera* camera, double horizontal, double vertical);
+
+/**
+ * Set the speed of forward and backward motion.
+ */
+void set_camera_speed(Camera* camera, double speed);
+
+/**
+ * Set the speed of left and right side steps.
+ */
+void set_camera_side_speed(Camera* camera, double speed);
+
+#endif /* CAMERA_H */
+
+==== scene.h ====
+// scene.h
+
+#ifndef SCENE_H
+#define SCENE_H
+
+#include "camera.h"
+#include "texture.h" // Szükséges a GLuint-hez
+#include "utils.h"   // Szükséges a Material és vec3 típusokhoz
+
+#include <obj/model.h> // Szükséges a Model típushoz
+#include <stdbool.h>   // Szükséges a bool típushoz
+
+#define NUM_TREES 10 // Fák száma
+
+typedef struct Wall {
+    vec3 position;
+    vec3 size;
+} Wall;
+
+typedef struct Scene
+{
+    Model cube;
+    Model tree;
+    Model lady_figure; // ÚJ: A figura modellje
+    Material material;
+    GLuint texture_id;
+    GLuint ground_texture_id;
+    Wall walls[4];
+    vec3 tree_positions[NUM_TREES];
+    vec3 lady_figure_position; // ÚJ: A figura pozíciója
+} Scene;
+
+/**
+ * Initialize the scene.
+ * Betölti a modelleket, textúrákat és beállítja az alapértelmezett anyagokat.
+ */
+void init_scene(Scene* scene);
+
+/**
+ * Set the lighting properties.
+ * Beállítja a fényforrásokat (ambient, diffuse, specular, position).
+ */
+void set_lighting();
+
+/**
+ * Set the material properties for an object.
+ * Beállítja az aktuális rajzolási anyag tulajdonságait.
+ */
+void set_material(const Material* material);
+
+/**
+ * Update the scene.
+ * Jelenleg üres, de később animációkhoz vagy dinamikus elemekhez használható.
+ */
+void update_scene(Scene* scene);
+
+/**
+ * Render the scene objects.
+ * Kirajzolja a jelenet összes elemét (modellek, talaj, falak).
+ */
+void render_scene(const Scene* scene);
+
+/**
+ * Draw the origin lines (axes).
+ * Segédfüggvény az X, Y, Z tengelyek kirajzolásához.
+ */
+void draw_origin();
+
+/**
+ * Draw the ground quad.
+ * Kirajzol egy textúrázott négyszöget talajként.
+ */
+void draw_ground(GLuint texture_id);
+
+/**
+ * Draw a single wall.
+ * Kirajzol egy falat a megadott pozícióval és mérettel.
+ */
+void draw_wall(const Wall* wall);
+
+/**
+ * Check for collision between the camera and the walls.
+ * Ellenőrzi, hogy a kamera ütközik-e valamelyik fallal.
+ */
+bool check_collision(const Camera* camera, const Wall* walls);
+
+#endif /* SCENE_H */
+
+==== texture.h ====
+#ifndef TEXTURE_H
+#define TEXTURE_H
+
+#include <GL/gl.h>
+
+typedef GLubyte Pixel[3];
+
+/**
+ * Load texture from file and returns with the texture name.
+ */
+GLuint load_texture(char* filename);
+
+#endif /* TEXTURE_H */
+
+
+==== utils.h ====
+#ifndef UTILS_H
+#define UTILS_H
+
+/**
+ * GLSL-like three dimensional vector
+ */
+typedef struct vec3
+{
+    float x;
+    float y;
+    float z;
+} vec3;
+
+/**
+ * Color with RGB components
+ */
+typedef struct Color
+{
+    float red;
+    float green;
+    float blue;
+} Color;
+
+/**
+ * Material
+ */
+typedef struct Material
+{
+    struct Color ambient;
+    struct Color diffuse;
+    struct Color specular;
+    float shininess;
+} Material;
+
+/**
+ * Calculates radian from degree.
+ */
+double degree_to_radian(double degree);
+
+#endif /* UTILS_H */
+
+
