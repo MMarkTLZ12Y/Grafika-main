@@ -1,0 +1,874 @@
+==== app.c ====
+#include "app.h"
+#include <stdio.h>
+#include <SDL2/SDL_image.h>
+#include <GL/glu.h>
+
+void init_app(App* app, int width, int height)
+{
+    int error_code;
+    int inited_loaders;
+
+    app->is_running = false;
+
+    error_code = SDL_Init(SDL_INIT_EVERYTHING);
+    if (error_code != 0) {
+        printf("[ERROR] SDL initialization error: %s\n", SDL_GetError());
+        return;
+    }
+
+    app->window = SDL_CreateWindow(
+        "Cube!",
+        SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+        width, height,
+        SDL_WINDOW_OPENGL);
+    if (app->window == NULL) {
+        printf("[ERROR] Unable to create the application window!\n");
+        return;
+    }
+
+    inited_loaders = IMG_Init(IMG_INIT_PNG);
+    if (inited_loaders == 0) {
+        printf("[ERROR] IMG initialization error: %s\n", IMG_GetError());
+        return;
+    }
+
+    app->gl_context = SDL_GL_CreateContext(app->window);
+    if (app->gl_context == NULL) {
+        printf("[ERROR] Unable to create the OpenGL context!\n");
+        return;
+    }
+
+    init_opengl();
+    reshape(width, height);
+    init_camera(&(app->camera));
+    init_scene(&(app->scene));
+    app->is_running = true;
+    SDL_SetRelativeMouseMode(SDL_TRUE);
+
+    // Súgó textúra betöltése
+    app->help_texture_id = load_texture("assets/textures/help.png");
+    app->show_help = false;
+}
+
+void init_opengl()
+{
+    glShadeModel(GL_SMOOTH);
+    glEnable(GL_NORMALIZE);
+    glEnable(GL_AUTO_NORMAL);
+    glClearColor(0.5f, 0.7f, 1.0f, 1.0f);
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+    glEnable(GL_DEPTH_TEST);
+    glClearDepth(1.0);
+    glEnable(GL_TEXTURE_2D);
+    glEnable(GL_LIGHTING);
+    glEnable(GL_LIGHT0);
+
+    // === EZ A KÉT SOR A LÉNYEG ===
+    glDisable(GL_CULL_FACE);
+    glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, GL_TRUE);
+    // === EDDIG ===
+}
+
+void reshape(GLsizei width, GLsizei height)
+{
+    int x, y, w, h;
+    double ratio;
+
+    ratio = (double)width / height;
+    if (ratio > VIEWPORT_RATIO) {
+        w = (int)((double)height * VIEWPORT_RATIO);
+        h = height;
+        x = (width - w) / 2;
+        y = 0;
+    }
+    else {
+        w = width;
+        h = (int)((double)width / VIEWPORT_RATIO);
+        x = 0;
+        y = (height - h) / 2;
+    }
+
+    glViewport(x, y, w, h);
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    glFrustum(-.08, .08, -.06, .06, .1, 100);
+}
+
+void handle_app_events(App* app)
+{
+    SDL_Event event;
+    static int mouse_x = 0;
+    static int mouse_y = 0;
+    int x;
+    int y;
+
+    while (SDL_PollEvent(&event)) {
+        switch (event.type) {
+            case SDL_KEYDOWN:
+                switch (event.key.keysym.scancode) {
+                    case SDL_SCANCODE_ESCAPE:
+                        app->is_running = false;
+                        break;
+                    case SDL_SCANCODE_W:
+                        set_camera_speed(&(app->camera), 1);
+                        break;
+                    case SDL_SCANCODE_F1:  // 'F1' billentyűre bekapcsol a súgó
+                        app->show_help = !app->show_help;
+                        break;
+                    case SDL_SCANCODE_S:
+                        set_camera_speed(&(app->camera), -1);
+                        break;
+                    case SDL_SCANCODE_A:
+                        set_camera_side_speed(&(app->camera), 1);
+                        break;
+                    case SDL_SCANCODE_D:
+                        set_camera_side_speed(&(app->camera), -1);
+                        break;
+                    case SDL_SCANCODE_SPACE:
+                        if (!app->camera.is_jumping) {
+                            app->camera.is_jumping = true;
+                            app->camera.vertical_speed = 5.75;
+                        }
+                        break;
+                    default:
+                        break;
+                }
+                break;
+            case SDL_KEYUP:
+                switch (event.key.keysym.scancode) {
+                    case SDL_SCANCODE_W:
+                    case SDL_SCANCODE_S:
+                        set_camera_speed(&(app->camera), 0);
+                        break;
+                    case SDL_SCANCODE_A:
+                    case SDL_SCANCODE_D:
+                        set_camera_side_speed(&(app->camera), 0);
+                        break;
+                    default:
+                        break;
+                }
+                break;
+            case SDL_MOUSEMOTION:
+                SDL_GetMouseState(&x, &y);
+                rotate_camera(&(app->camera), mouse_x - x, mouse_y - y);
+                mouse_x = x;
+                mouse_y = y;
+                break;
+            case SDL_QUIT:
+                app->is_running = false;
+                break;
+            default:
+                break;
+        }
+    }
+}
+
+void render_help(App* app) {
+    if (!app->show_help || app->help_texture_id == 0) return;
+
+    // OpenGL állapotok mentése
+    glPushAttrib(GL_ENABLE_BIT | GL_COLOR_BUFFER_BIT);
+    
+    // Szükséges beállítások
+    glDisable(GL_LIGHTING);
+    glDisable(GL_DEPTH_TEST);
+    glEnable(GL_TEXTURE_2D);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    
+    // Textúra kötése
+    glBindTexture(GL_TEXTURE_2D, app->help_texture_id);
+
+    // Vetítési mátrix beállítása
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glLoadIdentity();
+    glOrtho(0, 800, 600, 0, -1, 1);  // Figyeld meg, hogy y fordított!
+
+    // Modellnézeti mátrix
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    glLoadIdentity();
+
+    // Teljes átlátszóság (fehér szín teljes alfa értékkel)
+    glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+    
+    // Textúrázott quad rajzolása
+    glBegin(GL_QUADS);
+        glTexCoord2f(0.0f, 0.0f); glVertex2f(100.0f, 100.0f);
+        glTexCoord2f(1.0f, 0.0f); glVertex2f(700.0f, 100.0f);
+        glTexCoord2f(1.0f, 1.0f); glVertex2f(700.0f, 500.0f);
+        glTexCoord2f(0.0f, 1.0f); glVertex2f(100.0f, 500.0f);
+    glEnd();
+
+    // Visszaállítások
+    glPopMatrix();
+    glMatrixMode(GL_PROJECTION);
+    glPopMatrix();
+    glMatrixMode(GL_MODELVIEW);
+    
+    // OpenGL állapotok visszaállítása
+    glPopAttrib();
+}
+
+void update_app(App* app)
+{
+    double current_time;
+    double elapsed_time;
+    vec3 old_position = app->camera.position;
+
+    current_time = (double)SDL_GetTicks() / 1000;
+    elapsed_time = current_time - app->uptime;
+    app->uptime = current_time;
+
+    update_camera(&(app->camera), elapsed_time);
+    
+    if (check_collision(&(app->camera), app->scene.walls)) {
+        app->camera.position = old_position;
+    }
+
+    update_scene(&(app->scene));
+}
+
+void render_app(App* app) {
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    set_view(&(app->camera));
+    render_scene(&(app->scene));
+    glPopMatrix();
+
+    render_help(app);  // Súgó renderelése (ha látható)
+
+    SDL_GL_SwapWindow(app->window);
+}
+
+void destroy_app(App* app)
+{
+
+    if (app->help_texture_id != 0) {
+        glDeleteTextures(1, &app->help_texture_id);
+    }
+    if (app->gl_context != NULL) {
+        SDL_GL_DeleteContext(app->gl_context);
+    }
+    if (app->window != NULL) {
+        SDL_DestroyWindow(app->window);
+    }
+    SDL_Quit();
+}
+
+==== camera.c ====
+#include "camera.h"
+
+#include <GL/gl.h>
+#include <math.h>
+
+void init_camera(Camera* camera)
+{
+    camera->position.x = 0.0;
+    camera->position.y = 0.0;
+    camera->position.z = 1.0;
+    camera->rotation.x = 0.0;
+    camera->rotation.y = 0.0;
+    camera->rotation.z = 0.0;
+    camera->speed.x = 0.0;
+    camera->speed.y = 0.0;
+    camera->speed.z = 0.0;
+
+    camera->is_preview_visible = false;
+    camera->is_jumping = false;
+    camera->vertical_speed = 0.0;
+}
+
+void update_camera(Camera* camera, double time)
+{
+    double angle;
+    double side_angle;
+    vec3 new_position;
+
+    angle = degree_to_radian(camera->rotation.z);
+    side_angle = degree_to_radian(camera->rotation.z + 90.0);
+
+    new_position = camera->position;
+    new_position.x += cos(angle) * camera->speed.y * time;
+    new_position.y += sin(angle) * camera->speed.y * time;
+    new_position.x += cos(side_angle) * camera->speed.x * time;
+    new_position.y += sin(side_angle) * camera->speed.x * time;
+
+    if (camera->is_jumping) {
+        new_position.z += camera->vertical_speed * time;
+        camera->vertical_speed -= 4.0 * time;
+
+        if (new_position.z < 1.0) {
+            new_position.z = 1.0;
+            camera->is_jumping = false;
+            camera->vertical_speed = 0.0;
+        }
+    }
+
+    camera->position = new_position;
+}
+
+void set_view(const Camera* camera)
+{
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+    glRotatef(-(camera->rotation.x + 90), 1.0, 0, 0);
+    glRotatef(-(camera->rotation.z - 90), 0, 0, 1.0);
+    glTranslatef(-camera->position.x, -camera->position.y, -camera->position.z);
+}
+
+void rotate_camera(Camera* camera, double horizontal, double vertical)
+{
+    camera->rotation.z += horizontal;
+    camera->rotation.x += vertical;
+
+    if (camera->rotation.z < 0) {
+        camera->rotation.z += 360.0;
+    }
+    if (camera->rotation.z > 360.0) {
+        camera->rotation.z -= 360.0;
+    }
+    if (camera->rotation.x < 0) {
+        camera->rotation.x += 360.0;
+    }
+    if (camera->rotation.x > 360.0) {
+        camera->rotation.x -= 360.0;
+    }
+}
+
+void set_camera_speed(Camera* camera, double speed)
+{
+    camera->speed.y = speed;
+}
+
+void set_camera_side_speed(Camera* camera, double speed)
+{
+    camera->speed.x = speed;
+}
+
+void show_texture_preview()
+{
+    glDisable(GL_LIGHTING);
+    glDisable(GL_DEPTH_TEST);
+    glEnable(GL_COLOR_MATERIAL);
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+    glColor3f(1, 1, 1);
+    glBegin(GL_QUADS);
+    glTexCoord2f(0, 0);
+    glVertex3f(-1, 1, -3);
+    glTexCoord2f(1, 0);
+    glVertex3f(1, 1, -3);
+    glTexCoord2f(1, 1);
+    glVertex3f(1, -1, -3);
+    glTexCoord2f(0, 1);
+    glVertex3f(-1, -1, -3);
+    glEnd();
+    glDisable(GL_COLOR_MATERIAL);
+    glEnable(GL_LIGHTING);
+    glEnable(GL_DEPTH_TEST);
+}
+
+==== main.c ====
+#include "app.h"
+
+#include <stdio.h>
+
+/**
+ * Main function
+ */
+int main(int argc, char* argv[]) {
+    (void)argc;  // Explicit nem használt jelzés
+    (void)argv;  // Explicit nem használt jelzés
+    App app;
+
+    init_app(&app, 800, 600);
+    while (app.is_running) {
+        handle_app_events(&app);
+        update_app(&app);
+        render_app(&app);
+    }
+    destroy_app(&app);
+
+    return 0;
+}
+
+
+==== scene.c ====
+#include "scene.h"
+#include <obj/load.h>
+#include <obj/draw.h>
+#include <GL/gl.h>
+#include <stdio.h>
+#include <stdlib.h> // Szükséges a rand()-hoz, ha véletlenszerű pozíciókat szeretnénk
+#include <time.h>   // Szükséges a srand()-hoz
+
+void init_scene(Scene* scene)
+{
+    // Modellek betöltése
+    if (!load_model(&(scene->cube), "assets/models/cube.obj")) {
+        printf("ERROR: Failed to load model: assets/models/cube.obj\n");
+    }
+    if (!load_model(&(scene->tree), "assets/models/tree.obj")) {
+        printf("ERROR: Failed to load model: assets/models/tree.obj\n");
+    }
+    // ÚJ: Figura modell betöltése
+    if (!load_model(&(scene->lady_figure), "assets/models/lady_figure.obj")) {
+        printf("ERROR: Failed to load model: assets/models/lady_figure.obj\n");
+        // Itt érdemes lehet valamilyen hibakezelést végezni
+    }
+
+    // Textúrák betöltése
+    scene->texture_id = load_texture("assets/textures/cube.png");
+    if (scene->texture_id == 0) {
+        printf("ERROR: Failed to load texture: assets/textures/cube.png\n");
+    }
+    scene->ground_texture_id = load_texture("assets/textures/grass.png");
+    if (scene->ground_texture_id == 0) {
+        printf("ERROR: Failed to load texture: assets/textures/grass.png\n");
+    }
+
+    // Falak inicializálása (egy 10x10-es doboz, 2 egység magas falakkal)
+    // A falak közepe a megadott pozícióban van.
+    // A méretek: x (vastagság X mentén), y (vastagság Y mentén), z (magasság Z mentén)
+    // A jelenlegi koordináta-rendszerben:
+    // X: jobbra/balra
+    // Y: előre/hátra
+    // Z: fel/le
+    float wall_thickness = 0.2f;
+    float room_size = 10.0f;
+    float wall_height = 2.0f;
+    float half_room = room_size / 2.0f;
+    float half_thickness = wall_thickness / 2.0f;
+    scene->walls[0] = (Wall){{-half_room - half_thickness, 0.0f, wall_height / 2.0f}, {wall_thickness, room_size + wall_thickness*2, wall_height}};
+    scene->walls[1] = (Wall){{half_room + half_thickness, 0.0f, wall_height / 2.0f}, {wall_thickness, room_size + wall_thickness*2, wall_height}};
+    scene->walls[2] = (Wall){{0.0f, -half_room - half_thickness, wall_height / 2.0f}, {room_size, wall_thickness, wall_height}};
+    scene->walls[3] = (Wall){{0.0f, half_room + half_thickness, wall_height / 2.0f}, {room_size, wall_thickness, wall_height}};
+
+
+    // Alapértelmezett anyag beállítása (pl. a kockákhoz)
+    scene->material.ambient.red = 0.2f;
+    scene->material.ambient.green = 0.2f;
+    scene->material.ambient.blue = 0.0f;
+    scene->material.diffuse.red = 1.0f;
+    scene->material.diffuse.green = 1.0f;
+    scene->material.diffuse.blue = 0.0f;
+    scene->material.specular.red = 0.1f;
+    scene->material.specular.green = 0.1f;
+    scene->material.specular.blue = 0.0f;
+    scene->material.shininess = 10.0f;
+
+    // ÚJ: Fák pozícióinak inicializálása
+    // Lehetnek fix pozíciók, vagy generálhatunk véletlenszerűeket
+    // srand(time(NULL)); // Véletlenszám-generátor inicializálása (ha szükséges)
+
+    // Fix pozíciók példaként:
+    scene->tree_positions[0] = (vec3){  5.0f,  5.0f, 0.0f };
+    scene->tree_positions[1] = (vec3){ -6.0f,  3.0f, 0.0f };
+    scene->tree_positions[2] = (vec3){  7.0f, -4.0f, 0.0f };
+    scene->tree_positions[3] = (vec3){ -8.0f, -6.0f, 0.0f };
+    scene->tree_positions[4] = (vec3){  0.0f,  8.0f, 0.0f }; // Ez a falakon belül lehet
+    scene->tree_positions[5] = (vec3){ 12.0f, 12.0f, 0.0f }; // Ez biztosan kívül
+    scene->tree_positions[6] = (vec3){-15.0f,  0.0f, 0.0f };
+    scene->tree_positions[7] = (vec3){  0.0f,-13.0f, 0.0f };
+    scene->tree_positions[8] = (vec3){ 10.0f, -9.0f, 0.0f };
+    scene->tree_positions[9] = (vec3){ -3.0f, 11.0f, 0.0f };
+
+    /*
+    // Vagy véletlenszerű pozíciók egy tartományban:
+    // A talaj mérete -ground_size-tól +ground_size-ig terjed, azaz 2*ground_size
+    // A draw_ground-ban ground_size = 30.0f;
+    float spawn_range = 25.0f; // Legyenek a ground_size-on belül, de ne a legszélén
+    for (int i = 0; i < NUM_TREES; ++i) {
+        scene->tree_positions[i].x = ((float)rand() / RAND_MAX) * 2.0f * spawn_range - spawn_range;
+        scene->tree_positions[i].y = ((float)rand() / RAND_MAX) * 2.0f * spawn_range - spawn_range;
+        scene->tree_positions[i].z = 0.0f; // Talajon
+    }
+    */
+
+   // ÚJ: Figura pozíciójának inicializálása
+    // Például a pálya egy pontjára, a talajszinten (Z=0, mivel a modell alja 0-ban van)
+    scene->lady_figure_position = (vec3){ 3.0f, 3.0f, 0.0f };
+}
+
+
+void set_lighting()
+{
+    // 1. Globális környezeti fény modell beállítása
+    // Ez egy általános "alapfényességet" ad az egész jelenetnek.
+    // Az értékekkel kísérletezhetsz (0.0 - 1.0). Magasabb értékek világosabb, "laposabb" jelenetet eredményeznek.
+    float model_ambient[] = { 0.5f, 0.5f, 0.5f, 1.0f }; // Eredetileg nincs expliciten beállítva, az alapértelmezett (0.2, 0.2, 0.2, 1.0)
+    glLightModelfv(GL_LIGHT_MODEL_AMBIENT, model_ambient);
+
+    // 2. Fő fényforrás (GL_LIGHT0) beállításai
+    // Mivel a globális ambient fény erősebb, a fényforrás saját ambient komponensét csökkenthetjük.
+    float ambient_light0[] = { 0.2f, 0.2f, 0.2f, 1.0f };  // Eredeti: { 0.3f, 0.3f, 0.3f, 1.0f }
+    // A diffúz fényt is érdemes lehet kicsit csökkenteni, hogy ne égjenek ki a felületek a megnövelt ambient miatt.
+    float diffuse_light0[] = { 0.7f, 0.7f, 0.7f, 1.0f };  // Eredeti: { 0.8f, 0.8f, 0.8f, 1.0f }
+    float specular_light0[] = { 0.8f, 0.8f, 0.8f, 1.0f }; // Csillanás maradhat erősebb, vagy ezt is csökkentheted
+                                                        // Eredeti: { 1.0f, 1.0f, 1.0f, 1.0f }
+    // Fényforrás pozíciója:
+    // Az eredeti { 3.0f, 3.0f, 5.0f, 1.0f } volt.
+    // Próbáljuk meg egy kicsit magasabbra és esetleg középre helyezni,
+    // hogy kevésbé legyen egyértelműen "oldalról" jövő a fény.
+    // Példa: Közel felülről, de enyhén eltolva
+    float position0[] = { 1.0f, 1.0f, 7.0f, 1.0f };
+    // Vagy egy semlegesebb, távolabbi pont:
+    // float position0[] = { 5.0f, 5.0f, 10.0f, 1.0f };
+
+    glLightfv(GL_LIGHT0, GL_AMBIENT, ambient_light0);
+    glLightfv(GL_LIGHT0, GL_DIFFUSE, diffuse_light0);
+    glLightfv(GL_LIGHT0, GL_SPECULAR, specular_light0);
+    glLightfv(GL_LIGHT0, GL_POSITION, position0);
+
+    // A GL_LIGHT0 már engedélyezve van az init_opengl()-ben, így itt nem kell újra glEnable(GL_LIGHT0)-t hívni,
+    // hacsak nem kapcsoltad ki valahol máshol.
+    // A glEnable(GL_LIGHTING) is az init_opengl()-ben van.
+    // GL_LIGHT1 (gyengébb kitöltő fény)
+float ambient_light1[]  = { 0.1f, 0.1f, 0.1f, 1.0f };
+float diffuse_light1[]  = { 0.3f, 0.3f, 0.3f, 1.0f };
+float specular_light1[] = { 0.0f, 0.0f, 0.0f, 1.0f }; // Kitöltő fénynek nem kell csillanás
+float position1[]       = { -3.0f, -3.0f, 4.0f, 1.0f }; // Pl. az ellenkező oldalról
+
+glLightfv(GL_LIGHT1, GL_AMBIENT, ambient_light1);
+glLightfv(GL_LIGHT1, GL_DIFFUSE, diffuse_light1);
+glLightfv(GL_LIGHT1, GL_SPECULAR, specular_light1);
+glLightfv(GL_LIGHT1, GL_POSITION, position1);
+glEnable(GL_LIGHT1); // Fontos!
+}
+
+void set_material(const Material* material)
+{
+    // Anyag tulajdonságainak beállítása
+    // OpenGL régi, fix funkciós pipeline anyagmodelljét használjuk
+    float ambient_material_color[] = {
+        material->ambient.red,
+        material->ambient.green,
+        material->ambient.blue,
+        1.0f // Alpha komponens, általában 1.0 átlátszatlan objektumokhoz
+    };
+
+    float diffuse_material_color[] = {
+        material->diffuse.red,
+        material->diffuse.green,
+        material->diffuse.blue,
+        1.0f
+    };
+
+    float specular_material_color[] = {
+        material->specular.red,
+        material->specular.green,
+        material->specular.blue,
+        1.0f
+    };
+
+    glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, ambient_material_color);
+    glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, diffuse_material_color);
+    glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, specular_material_color);
+    glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, material->shininess); // Shininess egy float, nem tömb
+}
+
+void update_scene(Scene* scene)
+{
+    // Jelenleg nincs mit frissíteni a jeleneten minden képkockában.
+    // Ide kerülhetnének pl. animációk, fizikai szimulációk frissítése.
+    (void)scene; // Hogy a fordító ne panaszkodjon a nem használt paraméterre
+}
+
+void draw_ground(GLuint texture_id)
+{
+    glBindTexture(GL_TEXTURE_2D, texture_id); // Textúra kötése
+    // A textúrázásnak engedélyezve kell lennie (glEnable(GL_TEXTURE_2D))
+
+    // Anyag beállítása a talajhoz (ha eltérőt szeretnénk, mint az alap)
+    // Itt feltételezzük, hogy a hívó helyen van beállítva, vagy az alapértelmezett jó.
+    // Pl. egy szürkésebb, kevésbé csillogó anyag:
+    /*
+    Material ground_material;
+    ground_material.ambient.red = 0.2f; ground_material.ambient.green = 0.2f; ground_material.ambient.blue = 0.2f;
+    ground_material.diffuse.red = 0.6f; ground_material.diffuse.green = 0.6f; ground_material.diffuse.blue = 0.6f;
+    ground_material.specular.red = 0.1f; ground_material.specular.green = 0.1f; ground_material.specular.blue = 0.1f;
+    ground_material.shininess = 5.0f;
+    set_material(&ground_material);
+    */
+
+    // Egy nagy négyzet a talajnak, Z=0 síkon
+    // A textúra koordináták (0,0) és (1,1) között vannak, hogy a teljes textúra megjelenjen.
+    // Ha ismétlődő mintát szeretnénk, a koordinátákat növelhetnénk (pl. 0,0-tól 10,10-ig).
+    // Ehhez a textúra paramétereinél GL_REPEAT-et kell beállítani (glTexParameteri).
+    float ground_size = 30.0f;
+    glBegin(GL_QUADS);
+        glNormal3f(0.0f, 0.0f, 1.0f); // Normális felfelé mutat (a helyes megvilágításhoz)
+        glTexCoord2f(0.0f, 0.0f); glVertex3f(-ground_size, -ground_size, 0.0f);
+        glTexCoord2f(10.0f, 0.0f); glVertex3f( ground_size, -ground_size, 0.0f); // Textúra ismétlődéshez
+        glTexCoord2f(10.0f, 10.0f); glVertex3f( ground_size,  ground_size, 0.0f);
+        glTexCoord2f(0.0f, 10.0f); glVertex3f(-ground_size,  ground_size, 0.0f);
+    glEnd();
+}
+
+void draw_wall(const Wall* wall)
+{
+    glPushMatrix();
+    glTranslatef(wall->position.x, wall->position.y, wall->position.z);
+    glScalef(wall->size.x, wall->size.y, wall->size.z); // Méretezzük a falat
+
+    // Egyszerű fal szín, textúra nélkül
+    glDisable(GL_TEXTURE_2D); // Biztosan kikapcsoljuk a textúrázást a falhoz
+    
+    // Egyedi anyag a falaknak (szürke, matt)
+    Material wall_material;
+    wall_material.ambient.red = 0.2f; wall_material.ambient.green = 0.2f; wall_material.ambient.blue = 0.2f;
+    wall_material.diffuse.red = 0.5f; wall_material.diffuse.green = 0.5f; wall_material.diffuse.blue = 0.55f; // Enyhén kékes szürke
+    wall_material.specular.red = 0.0f; wall_material.specular.green = 0.0f; wall_material.specular.blue = 0.0f;
+    wall_material.shininess = 0.0f;
+    set_material(&wall_material);
+
+    // Egy egységkockát rajzolunk, amit a glScalef méretez
+    // Fontos, hogy a normálisok helyesek legyenek a megvilágításhoz.
+    glBegin(GL_QUADS);
+        // Front face (Z+)
+        glNormal3f(0.0f, 0.0f, 1.0f);
+        glVertex3f(-0.5f, -0.5f, 0.5f); glVertex3f(0.5f, -0.5f, 0.5f);
+        glVertex3f(0.5f, 0.5f, 0.5f); glVertex3f(-0.5f, 0.5f, 0.5f);
+        // Back face (Z-)
+        glNormal3f(0.0f, 0.0f, -1.0f);
+        glVertex3f(-0.5f, -0.5f, -0.5f); glVertex3f(-0.5f, 0.5f, -0.5f);
+        glVertex3f(0.5f, 0.5f, -0.5f); glVertex3f(0.5f, -0.5f, -0.5f);
+        // Top face (Y+)
+        glNormal3f(0.0f, 1.0f, 0.0f);
+        glVertex3f(-0.5f, 0.5f, -0.5f); glVertex3f(-0.5f, 0.5f, 0.5f);
+        glVertex3f(0.5f, 0.5f, 0.5f); glVertex3f(0.5f, 0.5f, -0.5f);
+        // Bottom face (Y-)
+        glNormal3f(0.0f, -1.0f, 0.0f);
+        glVertex3f(-0.5f, -0.5f, -0.5f); glVertex3f(0.5f, -0.5f, -0.5f);
+        glVertex3f(0.5f, -0.5f, 0.5f); glVertex3f(-0.5f, -0.5f, 0.5f);
+        // Right face (X+)
+        glNormal3f(1.0f, 0.0f, 0.0f);
+        glVertex3f(0.5f, -0.5f, -0.5f); glVertex3f(0.5f, 0.5f, -0.5f);
+        glVertex3f(0.5f, 0.5f, 0.5f); glVertex3f(0.5f, -0.5f, 0.5f);
+        // Left face (X-)
+        glNormal3f(-1.0f, 0.0f, 0.0f);
+        glVertex3f(-0.5f, -0.5f, -0.5f); glVertex3f(-0.5f, -0.5f, 0.5f);
+        glVertex3f(-0.5f, 0.5f, 0.5f); glVertex3f(-0.5f, 0.5f, -0.5f);
+    glEnd();
+    
+    glEnable(GL_TEXTURE_2D); // Visszakapcsoljuk, hátha a következő objektum textúrázott
+    glPopMatrix();
+}
+
+bool check_collision(const Camera* camera, const Wall* walls)
+{
+    // Egyszerű AABB (Axis-Aligned Bounding Box) ütközésvizsgálat
+    // A kamerát egy pontnak tekintjük egyelőre, vagy egy kis sugarú gömbnek.
+    // A falak téglatestek.
+
+    // Kamera bounding box-a (leegyszerűsítve egy pontra vagy kis kockára)
+    float cam_radius = 0.3f; // Kamera "mérete" az ütközéshez
+    float cam_min_x = camera->position.x - cam_radius;
+    float cam_max_x = camera->position.x + cam_radius;
+    float cam_min_y = camera->position.y - cam_radius;
+    float cam_max_y = camera->position.y + cam_radius;
+    float cam_min_z = camera->position.z - cam_radius; // Figyelembe véve a kamera magasságát
+    float cam_max_z = camera->position.z + cam_radius;
+
+
+    for (int i = 0; i < 4; i++) {
+        const Wall* wall = &walls[i];
+        
+        // Fal bounding box-a
+        float wall_min_x = wall->position.x - wall->size.x / 2.0f;
+        float wall_max_x = wall->position.x + wall->size.x / 2.0f;
+        float wall_min_y = wall->position.y - wall->size.y / 2.0f;
+        float wall_max_y = wall->position.y + wall->size.y / 2.0f;
+        float wall_min_z = wall->position.z - wall->size.z / 2.0f;
+        float wall_max_z = wall->position.z + wall->size.z / 2.0f;
+
+        // Ütközés ellenőrzése
+        bool overlap_x = cam_max_x > wall_min_x && cam_min_x < wall_max_x;
+        bool overlap_y = cam_max_y > wall_min_y && cam_min_y < wall_max_y;
+        bool overlap_z = cam_max_z > wall_min_z && cam_min_z < wall_max_z;
+
+        if (overlap_x && overlap_y && overlap_z) {
+            return true; // Ütközés történt
+        }
+    }
+    return false; // Nincs ütközés
+}
+ 
+void render_scene(const Scene* scene)
+{
+    set_material(&(scene->material));
+    set_lighting();
+    
+    draw_origin();
+
+    glEnable(GL_TEXTURE_2D);
+    glPushMatrix();
+    draw_ground(scene->ground_texture_id);
+    glPopMatrix();
+
+    for (int i = 0; i < 4; i++) {
+        draw_wall(&scene->walls[i]);
+    }
+
+    set_material(&(scene->material));
+    glBindTexture(GL_TEXTURE_2D, scene->texture_id);
+    glEnable(GL_TEXTURE_2D);
+
+    glPushMatrix();
+    glTranslatef(-2.0, -2.0, 0.5);
+    draw_model(&(scene->cube));
+    glPopMatrix();
+
+    glPushMatrix();
+    glTranslatef(2.0, -2.0, 0.5);
+    draw_model(&(scene->cube));
+    glPopMatrix();
+
+    Material tree_material;
+    // Növeljük az ambient komponenst, hogy a fa többet verjen vissza a globális környezeti fényből
+    tree_material.ambient.red   = 0.4f; // Eredetileg 0.1f
+    tree_material.ambient.green = 0.25f;// Eredetileg 0.05f
+    tree_material.ambient.blue  = 0.15f;// Eredetileg 0.02f
+
+    tree_material.diffuse.red   = 0.5f;
+    tree_material.diffuse.green = 0.35f;
+    tree_material.diffuse.blue  = 0.2f;
+
+    tree_material.specular.red  = 0.05f;
+    tree_material.specular.green= 0.05f;
+    tree_material.specular.blue = 0.0f;
+    tree_material.shininess     = 5.0f;
+
+    set_material(&tree_material);
+    glDisable(GL_TEXTURE_2D);
+
+    for (int i = 0; i < NUM_TREES; ++i) {
+        glPushMatrix();
+        // Elmozdítjuk a fát a tárolt pozíciójára
+        glTranslatef(
+            scene->tree_positions[i].x,
+            scene->tree_positions[i].y,
+            scene->tree_positions[i].z
+        );
+        // Itt lehetne méretezni is, ha kellene: glScalef(meret_x, meret_y, meret_z);
+        draw_model(&(scene->tree)); // Ugyanazt a fa modellt rajzoljuk ki
+        glPopMatrix();
+    }
+
+// Figura rajzolása
+    Material lady_material;
+    // Próbálj ki valamilyen színt, pl. egy rózsaszínes/lilás árnyalatot
+    lady_material.ambient.red = 0.4f; lady_material.ambient.green = 0.2f; lady_material.ambient.blue = 0.3f;
+    lady_material.diffuse.red = 0.8f; lady_material.diffuse.green = 0.4f; lady_material.diffuse.blue = 0.6f;
+    lady_material.specular.red = 0.3f; lady_material.specular.green = 0.3f; lady_material.specular.blue = 0.3f;
+    lady_material.shininess = 30.0f;
+
+    set_material(&lady_material);
+    glDisable(GL_TEXTURE_2D); // Feltételezzük, hogy a figura nem textúrázott
+
+    glPushMatrix();
+    glTranslatef(
+        scene->lady_figure_position.x,
+        scene->lady_figure_position.y,
+        scene->lady_figure_position.z // Ha Z=0, akkor a talajon áll
+    );
+    // A figura kb. 2.0 egység magas. Ha szeretnéd méretezni:
+    // glScalef(0.8f, 0.8f, 0.8f); // Kicsinyítés 80%-ra
+    draw_model(&(scene->lady_figure));
+    glPopMatrix();
+
+
+    glEnable(GL_TEXTURE_2D); // Visszakapcsolás a textúrázáshoz, ha másnak kell
+}
+
+void draw_origin()
+{
+    // Fények és textúrázás kikapcsolása a tengelyvonalakhoz, hogy fix színűek legyenek
+    GLboolean lighting_enabled;
+    GLboolean texture_2d_enabled;
+    glGetBooleanv(GL_LIGHTING, &lighting_enabled);
+    glGetBooleanv(GL_TEXTURE_2D, &texture_2d_enabled);
+
+    glDisable(GL_LIGHTING);
+    glDisable(GL_TEXTURE_2D);
+    
+    glBegin(GL_LINES);
+        // X tengely (piros)
+        glColor3f(1.0f, 0.0f, 0.0f);
+        glVertex3f(0.0f, 0.0f, 0.0f);
+        glVertex3f(1.0f, 0.0f, 0.0f);
+
+        // Y tengely (zöld)
+        glColor3f(0.0f, 1.0f, 0.0f);
+        glVertex3f(0.0f, 0.0f, 0.0f);
+        glVertex3f(0.0f, 1.0f, 0.0f);
+
+        // Z tengely (kék)
+        glColor3f(0.0f, 0.0f, 1.0f);
+        glVertex3f(0.0f, 0.0f, 0.0f);
+        glVertex3f(0.0f, 0.0f, 1.0f);
+    glEnd();
+
+    // Előző állapot visszaállítása
+    if (lighting_enabled) glEnable(GL_LIGHTING);
+    if (texture_2d_enabled) glEnable(GL_TEXTURE_2D);
+    
+    // Szín visszaállítása fehérre, hogy ne befolyásolja a következő rajzolásokat,
+    // ha azok nem használnak anyagokat (pl. glColor után)
+    glColor3f(1.0f, 1.0f, 1.0f);
+}
+
+==== texture.c ====
+#include "texture.h"
+
+#include <SDL2/SDL.h>
+#include <SDL2/SDL_image.h>
+#include <GL/gl.h>
+#include <stdio.h>
+
+GLuint load_texture(char* filename) {
+    SDL_Surface* surface = IMG_Load(filename);
+    if (!surface) {
+        printf("Error loading texture: %s\n", IMG_GetError());
+        return 0;
+    }
+
+    // Konvertálás RGBA formátumra, ha szükséges
+    SDL_Surface* converted = SDL_ConvertSurfaceFormat(surface, SDL_PIXELFORMAT_RGBA32, 0);
+    SDL_FreeSurface(surface);
+    if (!converted) {
+        printf("Error converting texture: %s\n", SDL_GetError());
+        return 0;
+    }
+
+    GLuint texture_id;
+    glGenTextures(1, &texture_id);
+    glBindTexture(GL_TEXTURE_2D, texture_id);
+
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, converted->w, converted->h, 0,
+                 GL_RGBA, GL_UNSIGNED_BYTE, converted->pixels);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+    SDL_FreeSurface(converted);
+    return texture_id;
+}
+
+==== utils.c ====
+#include "utils.h"
+
+#include <math.h>
+
+double degree_to_radian(double degree)
+{
+	return degree * M_PI / 180.0;
+}
+
+
+
